@@ -825,11 +825,12 @@ export function setupController(
   }
 
   function getUnapprovedTransactionCount() {
-    let count = controller.appStateController.waitingForUnlock.length;
+    let count =
+      controller.appStateController.waitingForUnlock.length +
+      controller.approvalController.getTotalApprovalCount();
+
     if (controller.preferencesController.getUseRequestQueue()) {
       count += controller.queuedRequestController.state.queuedRequestCount;
-    } else {
-      count += controller.approvalController.getTotalApprovalCount();
     }
     return count;
   }
