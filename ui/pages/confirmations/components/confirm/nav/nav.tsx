@@ -47,9 +47,9 @@ const Nav = () => {
     if (pendingConfirmations?.length <= 0 || !currentConfirmation) {
       return 0;
     }
-    return pendingConfirmations.sort((a1, a2) => a1.time - a2.time).findIndex(
-      ({ id }) => id === currentConfirmation.id,
-    );
+    return pendingConfirmations
+      .sort((a1, a2) => a1.time - a2.time)
+      .findIndex(({ id }) => id === currentConfirmation.id);
   }, [currentConfirmation, pendingConfirmations]);
 
   const onNavigateToTransaction = useCallback(
