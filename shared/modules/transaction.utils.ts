@@ -1,5 +1,6 @@
 import { isHexString } from 'ethereumjs-util';
 import { Interface } from '@ethersproject/abi';
+import { TransactionDescription } from '@ethersproject/abi/src.ts/interface';
 import { abiERC721, abiERC20, abiERC1155 } from '@metamask/metamask-eth-abis';
 import type EthQuery from '@metamask/eth-query';
 import log from 'loglevel';
@@ -24,7 +25,7 @@ const INFERRABLE_TRANSACTION_TYPES: TransactionType[] = [
 
 type InferTransactionTypeResult = {
   // The type of transaction
-  type: TransactionType | undefined;
+  type: TransactionType;
   // The contract code, in hex format if it exists. '0x0' or '0x' are also indicators of non-existent contract code
   getCodeResponse: string | null | undefined;
 };
@@ -44,8 +45,8 @@ export function isEIP1559Transaction(
   transactionMeta: TransactionMeta,
 ): boolean {
   return (
-    isHexString(transactionMeta?.txParams?.maxFeePerGas as string) &&
-    isHexString(transactionMeta?.txParams?.maxPriorityFeePerGas as string)
+    isHexString(transactionMeta?.txParams?.maxFeePerGas ?? '') &&
+    isHexString(transactionMeta?.txParams?.maxPriorityFeePerGas ?? '')
   );
 }
 
@@ -97,7 +98,9 @@ export function txParamsAreDappSuggested(
  * @param data - encoded transaction data
  * @returns TransactionDescription | undefined
  */
-export function parseStandardTokenTransactionData(data: string) {
+export function parseStandardTokenTransactionData(
+  data: string,
+): TransactionDescription | undefined {
   try {
     return erc20Interface.parseTransaction({ data });
   } catch {
@@ -135,14 +138,17 @@ export async function determineTransactionType(
   query: EthQuery,
 ): Promise<InferTransactionTypeResult> {
   const { data, to } = txParams;
-  let result: TransactionType;
-  let contractCode;
+  let contractCode: string | null | undefined;
 
   if (data && !to) {
-    result = TransactionType.deployContract;
-  } else {
+    return {
+      type: TransactionType.deployContract,
+      getCodeResponse: contractCode,
+    };
+  }
+  if (to) {
     const { contractCode: resultCode, isContractAddress } =
-      await readAddressAsContract(query, to as string);
+      await readAddressAsContract(query, to);
 
     contractCode = resultCode;
 
@@ -151,8 +157,10 @@ export async function determineTransactionType(
 
       let name: string = '';
       try {
-        const parsedData = data && parseStandardTokenTransactionData(data);
-        if (parsedData && parsedData.name) {
+        const parsedData = data
+          ? parseStandardTokenTransactionData(data)
+          : undefined;
+        if (parsedData?.name) {
           name = parsedData.name;
         }
       } catch (error) {
@@ -166,17 +174,17 @@ export async function determineTransactionType(
         TransactionType.tokenMethodTransferFrom,
         TransactionType.tokenMethodSafeTransferFrom,
       ].find((methodName) => isEqualCaseInsensitive(methodName, name));
-
-      result =
-        data && tokenMethodName && !hasValue
-          ? tokenMethodName
-          : TransactionType.contractInteraction;
-    } else {
-      result = TransactionType.simpleSend;
+      return {
+        type:
+          data && tokenMethodName && !hasValue
+            ? tokenMethodName
+            : TransactionType.contractInteraction,
+        getCodeResponse: contractCode,
+      };
     }
   }
 
-  return { type: result, getCodeResponse: contractCode };
+  return { type: TransactionType.simpleSend, getCodeResponse: contractCode };
 }
 
 type GetTokenStandardAndDetails = (to: string | undefined) => {
@@ -206,7 +214,7 @@ export async function determineTransactionAssetType(
   // If the transaction type is already one of the inferrable types, then we do
   // not need to re-establish the type.
   let inferrableType = txMeta.type;
-  if (!INFERRABLE_TRANSACTION_TYPES.includes(txMeta.type as TransactionType)) {
+  if (txMeta.type && !INFERRABLE_TRANSACTION_TYPES.includes(txMeta.type)) {
     // Because we will deal with all types of transactions (including swaps)
     // we want to get an inferrable type of transaction that isn't special cased
     // that way we can narrow the number of logic gates required.
